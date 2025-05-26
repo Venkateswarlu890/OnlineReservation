@@ -1,180 +1,98 @@
-# OnlineReservation
 
-import java.util.ArrayList;
-import java.util.Scanner;
+import numpy as np
+from scipy.integrate import dblquad
+import matplotlib.pyplot as plt
 
-class User {
-    private String username;
-    private String password;
+class MobiusStrip:
+    def __init__(self, R=1.0, w=0.3, n=200):
+        """
+        Initialize Mobius strip parameters.
+        R: radius from center to strip
+        w: width of the strip
+        n: resolution (number of points along u and v)
+        """
+        self.R = R
+        self.w = w
+        self.n = n
+        self.u = np.linspace(0, 2 * np.pi, n)
+        self.v = np.linspace(-w/2, w/2, n)
+        self.mesh = self.compute_mesh()
 
-    public User(String username, String password) {
-        this.username = username;
-        this.password = password;
-    }
+    def parametric(self, u, v):
+        """Parametric equations for the Mobius strip."""
+        x = (self.R + v * np.cos(u / 2)) * np.cos(u)
+        y = (self.R + v * np.cos(u / 2)) * np.sin(u)
+        z = v * np.sin(u / 2)
+        return x, y, z
 
-    public String getUsername() {
-        return username;
-    }
+    def compute_mesh(self):
+        """Compute the mesh grid of (x, y, z) points on the surface."""
+        uu, vv = np.meshgrid(self.u, self.v)
+        x, y, z = self.parametric(uu, vv)
+        return x, y, z
 
-    public String getPassword() {
-        return password;
-    }
-}
+    def area_element(self, u, v):
+        """
+        Compute the magnitude of the cross product of partial derivatives,
+        which gives the local surface area element.
+        """
+        # Partial derivatives with respect to u
+        dx_du = - (self.R + v * np.cos(u / 2)) * np.sin(u) - 0.5 * v * np.sin(u / 2) * np.cos(u)
+        dy_du = (self.R + v * np.cos(u / 2)) * np.cos(u) - 0.5 * v * np.sin(u / 2) * np.sin(u)
+        dz_du = 0.5 * v * np.cos(u / 2)
 
-class Reservation {
-    private String name;
-    private String date;
-    private int numberOfGuests;
-    private static int idCounter = 1;
-    private int reservationId;
+        # Partial derivatives with respect to v
+        dx_dv = np.cos(u / 2) * np.cos(u)
+        dy_dv = np.cos(u / 2) * np.sin(u)
+        dz_dv = np.sin(u / 2)
 
-    public Reservation(String name, String date, int numberOfGuests) {
-        this.name = name;
-        this.date = date;
-        this.numberOfGuests = numberOfGuests;
-        this.reservationId = idCounter++;
-    }
+        # Cross product
+        cx = dy_du * dz_dv - dz_du * dy_dv
+        cy = dz_du * dx_dv - dx_du * dz_dv
+        cz = dx_du * dy_dv - dy_du * dx_dv
 
-    public int getReservationId() {
-        return reservationId;
-    }
+        return np.sqrt(cx**2 + cy**2 + cz**2)
 
-    @Override
-    public String toString() {
-        return "Reservation ID: " + reservationId + ", Name: " + name + ", Date: " + date + ", Guests: " + numberOfGuests;
-    }
-}
+    def compute_surface_area(self):
+        """Numerically integrate the area element over the parameter domain."""
+        area, _ = dblquad(
+            self.area_element,
+            -self.w/2, self.w/2,  # v limits
+            lambda v: 0, lambda v: 2 * np.pi  # u limits
+        )
+        return area
 
-class ReservationSystem {
-    private ArrayList<Reservation> reservations = new ArrayList<>();
-    private ArrayList<User> users = new ArrayList<>();
-    private User loggedInUser = null;
+    def compute_edge_length(self):
+        """Approximate the length of the boundary (edge) numerically."""
+        # Edge at v = w/2 (the Möbius strip has only one edge, but both v=±w/2 traces are used for completeness)
+        u = np.linspace(0, 2 * np.pi, self.n)
+        v1 = np.full_like(u, self.w/2)
+        v2 = np.full_like(u, -self.w/2)
+        x1, y1, z1 = self.parametric(u, v1)
+        x2, y2, z2 = self.parametric(u, v2)
+        # Compute distances between consecutive points and sum
+        edge1 = np.sum(np.sqrt(np.diff(x1)**2 + np.diff(y1)**2 + np.diff(z1)**2))
+        edge2 = np.sum(np.sqrt(np.diff(x2)**2 + np.diff(y2)**2 + np.diff(z2)**2))
+        return edge1 + edge2
 
-    public void registerUser(String username, String password) {
-        users.add(new User(username, password));
-        System.out.println("User registered successfully.");
-    }
+    def plot(self):
+        """Visualize the Mobius strip."""
+        x, y, z = self.mesh
+        fig = plt.figure(figsize=(8, 6))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(x, y, z, color='teal', edgecolor='k', linewidth=0.1, alpha=0.8)
+        ax.set_xlabel('X', fontsize=14)
+        ax.set_ylabel('Y', fontsize=14)
+        ax.set_zlabel('Z', fontsize=14)
+        ax.set_title('Mobius Strip', fontsize=16)
+        plt.tight_layout()
+        plt.show()
 
-    public boolean loginUser(String username, String password) {
-        for (User user : users) {
-            if (user.getUsername().equals(username) && user.getPassword().equals(password)) {
-                loggedInUser = user;
-                System.out.println("Login successful.");
-                return true;
-            }
-        }
-        System.out.println("Invalid username or password.");
-        return false;
-    }
-
-    public void logoutUser() {
-        loggedInUser = null;
-        System.out.println("Logged out successfully.");
-    }
-
-    public void makeReservation(String name, String date, int numberOfGuests) {
-        if (loggedInUser == null) {
-            System.out.println("Please log in to make a reservation.");
-            return;
-        }
-        Reservation reservation = new Reservation(name, date, numberOfGuests);
-        reservations.add(reservation);
-        System.out.println("Reservation made successfully. Your reservation ID is " + reservation.getReservationId());
-    }
-
-    public void viewReservations() {
-        if (loggedInUser == null) {
-            System.out.println("Please log in to view reservations.");
-            return;
-        }
-        if (reservations.isEmpty()) {
-            System.out.println("No reservations found.");
-        } else {
-            for (Reservation reservation : reservations) {
-                System.out.println(reservation);
-            }
-        }
-    }
-
-    public void cancelReservation(int reservationId) {
-        if (loggedInUser == null) {
-            System.out.println("Please log in to cancel a reservation.");
-            return;
-        }
-        Reservation reservationToRemove = null;
-        for (Reservation reservation : reservations) {
-            if (reservation.getReservationId() == reservationId) {
-                reservationToRemove = reservation;
-                break;
-            }
-        }
-        if (reservationToRemove != null) {
-            reservations.remove(reservationToRemove);
-            System.out.println("Reservation cancelled successfully.");
-        } else {
-            System.out.println("Reservation ID not found.");
-        }
-    }
-}
-
-public class Main {
-    public static void main(String[] args) {
-        Scanner scanner = new Scanner(System.in);
-        ReservationSystem reservationSystem = new ReservationSystem();
-        while (true) {
-            System.out.println("1. Register");
-            System.out.println("2. Login");
-            System.out.println("3. Make a reservation");
-            System.out.println("4. View all reservations");
-            System.out.println("5. Cancel a reservation");
-            System.out.println("6. Logout");
-            System.out.println("7. Exit");
-            System.out.print("Choose an option: ");
-            int choice = scanner.nextInt();
-            scanner.nextLine();  // Consume newline
-
-            switch (choice) {
-                case 1:
-                    System.out.print("Enter username: ");
-                    String username = scanner.nextLine();
-                    System.out.print("Enter password: ");
-                    String password = scanner.nextLine();
-                    reservationSystem.registerUser(username, password);
-                    break;
-                case 2:
-                    System.out.print("Enter username: ");
-                    username = scanner.nextLine();
-                    System.out.print("Enter password: ");
-                    password = scanner.nextLine();
-                    reservationSystem.loginUser(username, password);
-                    break;
-                case 3:
-                    System.out.print("Enter name: ");
-                    String name = scanner.nextLine();
-                    System.out.print("Enter date (YYYY-MM-DD): ");
-                    String date = scanner.nextLine();
-                    System.out.print("Enter number of guests: ");
-                    int numberOfGuests = scanner.nextInt();
-                    reservationSystem.makeReservation(name, date, numberOfGuests);
-                    break;
-                case 4:
-                    reservationSystem.viewReservations();
-                    break;
-                case 5:
-                    System.out.print("Enter reservation ID to cancel: ");
-                    int reservationId = scanner.nextInt();
-                    reservationSystem.cancelReservation(reservationId);
-                    break;
-                case 6:
-                    reservationSystem.logoutUser();
-                    break;
-                case 7:
-                    System.out.println("Exiting...");
-                    scanner.close();
-                    return;
-                default:
-                    System.out.println("Invalid choice. Please try again.");
-            }
-        }
-    }
-}
+# Usage example
+if __name__ == "__main__":
+    mobius = MobiusStrip(R=1.0, w=0.3, n=200)
+    area = mobius.compute_surface_area()
+    edge_length = mobius.compute_edge_length()
+    print(f"Surface Area ≈ {area:.4f}")
+    print(f"Edge Length ≈ {edge_length:.4f}")
+    mobius.plot()
